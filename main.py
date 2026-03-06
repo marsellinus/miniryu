@@ -137,7 +137,7 @@ class AntiBruteForceSwitch(app_manager.RyuApp):
 
     def get_status(self):
         elapsed = max(time.time() - self.started_at, 1)
-        bandwidth_mbps = (self.total_byte_count * 8.0) / elapsed / 1_000_000
+        bandwidth_mbps = (self.total_byte_count * 8.0) / elapsed / 1000000.0
 
         connected_hosts = []
         for mac, host in self.host_index.items():

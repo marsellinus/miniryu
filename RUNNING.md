@@ -6,6 +6,29 @@
 pip install -r requirements.txt
 ```
 
+If you use an old Mininet VM (for example Ubuntu 12 Quantal), `pip` may fail to download from PyPI with TLS errors.
+
+Recommended approach for old VM:
+
+- Run Ryu + Mininet inside VM.
+- Run Flask dashboard on a modern host OS (Windows/Linux) and point it to VM Ryu API.
+
+Example host setting:
+
+```bash
+export RYU_API_URL=http://<VM_IP>:8080/api
+python3 -m web.app
+```
+
+Legacy VM fallback (best effort, no guarantee on very old repos):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python-flask python-requests
+```
+
+Note: this project targets Python 3. On Ubuntu 12, Python 3 package versions are usually too old for reliable Flask dashboard runtime.
+
 If Mininet is not installed yet (Ubuntu/Linux usually):
 
 ```bash

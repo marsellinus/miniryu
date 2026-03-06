@@ -1,5 +1,4 @@
 import threading
-from typing import Dict, List, Optional
 
 from ryu.ofproto import ofproto_v1_3
 
@@ -7,37 +6,37 @@ from ryu.ofproto import ofproto_v1_3
 class RoundRobinLoadBalancer:
     """Simple round-robin server selector with optional flow installation."""
 
-    def __init__(self, servers: Optional[List[Dict[str, object]]] = None):
-        self._servers: List[Dict[str, object]] = servers or []
+    def __init__(self, servers=None):
+        self._servers = servers or []
         self._index = 0
         self.enabled = False
         self._lock = threading.Lock()
 
-    def set_servers(self, servers: List[Dict[str, object]]) -> None:
+    def set_servers(self, servers):
         with self._lock:
             self._servers = servers
             self._index = 0
 
-    def add_server(self, server: Dict[str, object]) -> None:
+    def add_server(self, server):
         with self._lock:
             self._servers.append(server)
 
-    def remove_server(self, server_ip: str) -> None:
+    def remove_server(self, server_ip):
         with self._lock:
             self._servers = [s for s in self._servers if s.get("ip") != server_ip]
             self._index = 0 if self._index >= len(self._servers) else self._index
 
-    def enable(self) -> None:
+    def enable(self):
         self.enabled = True
 
-    def disable(self) -> None:
+    def disable(self):
         self.enabled = False
 
-    def get_servers(self) -> List[Dict[str, object]]:
+    def get_servers(self):
         with self._lock:
             return list(self._servers)
 
-    def choose_server(self) -> Optional[Dict[str, object]]:
+    def choose_server(self):
         with self._lock:
             if not self._servers:
                 return None
@@ -49,11 +48,11 @@ class RoundRobinLoadBalancer:
         self,
         datapath,
         add_flow_func,
-        client_ip: str,
-        vip_ip: str,
-        server: Dict[str, object],
+        client_ip,
+        vip_ip,
+        server,
         logger=None,
-    ) -> None:
+    ):
         """Installs a forwarding flow for VIP traffic to a chosen backend server."""
         parser = datapath.ofproto_parser
         ofproto = datapath.ofproto

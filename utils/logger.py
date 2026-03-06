@@ -2,13 +2,12 @@ import logging
 import threading
 import time
 from collections import deque
-from typing import Deque, Dict, List, Optional
 
 
 class SecurityEventLogger:
     """Thread-safe logger that keeps recent in-memory events for dashboards."""
 
-    def __init__(self, name: str = "sdn-security", max_events: int = 500):
+    def __init__(self, name="sdn-security", max_events=500):
         self._logger = logging.getLogger(name)
         if not self._logger.handlers:
             handler = logging.StreamHandler()
@@ -18,16 +17,16 @@ class SecurityEventLogger:
             handler.setFormatter(formatter)
             self._logger.addHandler(handler)
         self._logger.setLevel(logging.INFO)
-        self._events: Deque[Dict[str, object]] = deque(maxlen=max_events)
+        self._events = deque(maxlen=max_events)
         self._lock = threading.Lock()
 
     def log_event(
         self,
-        event_type: str,
-        message: str,
-        severity: str = "info",
-        details: Optional[Dict[str, object]] = None,
-    ) -> None:
+        event_type,
+        message,
+        severity="info",
+        details=None,
+    ):
         details = details or {}
         event = {
             "timestamp": time.time(),
@@ -47,11 +46,11 @@ class SecurityEventLogger:
         else:
             self._logger.info("[%s] %s | %s", event_type, message, details)
 
-    def get_recent_events(self, limit: int = 100) -> List[Dict[str, object]]:
+    def get_recent_events(self, limit=100):
         with self._lock:
             return list(self._events)[-limit:]
 
-    def get_recent_attacks(self, limit: int = 100) -> List[Dict[str, object]]:
+    def get_recent_attacks(self, limit=100):
         attacks = []
         for event in self.get_recent_events(limit=limit * 2):
             if event.get("event_type") in ("bruteforce", "ddos", "blocked_ip"):
