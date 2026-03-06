@@ -78,14 +78,30 @@ class AntiBruteForceSwitch(app_manager.RyuApp):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         self.datapaths[datapath.id] = datapath
+        self.logger.log_event(
+            "switch_connected",
+            "Switch connected to controller",
+            details={"dpid": datapath.id, "of_version": datapath.ofproto.OFP_VERSION},
+        )
 
         if datapath.ofproto.OFP_VERSION == ofproto_v1_3.OFP_VERSION:
             match = parser.OFPMatch()
             actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
             self.add_flow(datapath, 0, match, actions)
         else:
+            # Ensure OF1.0 switches send enough bytes to controller on table miss.
+            config = parser.OFPSetConfig(
+                datapath=datapath,
+                flags=ofproto.OFPC_FRAG_NORMAL,
+                miss_send_len=0xFFFF,
+            )
+            datapath.send_msg(config)
+
             match = parser.OFPMatch()
-            actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
+            try:
+                actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, 0xFFFF)]
+            except TypeError:
+                actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
             self.add_flow(datapath, 0, match, actions)
 
     def add_flow(self, datapath, priority, match, actions, hard_timeout=0):
