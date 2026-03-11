@@ -13,6 +13,7 @@ from ryu.lib.packet import ethernet
 from ryu.lib.packet import ipv4
 from ryu.lib.packet import packet
 from ryu.lib.packet import tcp
+from ryu.lib.packet import arp
 from ryu.ofproto import ofproto_v1_0, ofproto_v1_3
 
 from network.load_balancer import RoundRobinLoadBalancer
@@ -117,6 +118,7 @@ class AntiBruteForceSwitch(app_manager.RyuApp):
             self.add_flow(datapath, 120, match, [], hard_timeout=duration)
 
         self.blocked_ips.add(src_ip)
+        eventlet.spawn_after(duration, self.blocked_ips.discard, src_ip)
         self.sec_logger.log_event(
             "blocked_ip",
             "Manually blocked source IP",
@@ -216,6 +218,34 @@ class AntiBruteForceSwitch(app_manager.RyuApp):
         self.total_packet_count += 1
         self.total_byte_count += len(msg.data or b"")
 
+        arp_pkt = pkt.get_protocol(arp.arp)
+        if arp_pkt and self.load_balancer.enabled:
+            if arp_pkt.opcode == arp.ARP_REQUEST and arp_pkt.dst_ip == self.LOAD_BALANCER_VIP:
+                # Reply to ARP requests for the VIP with a dummy MAC
+                vip_mac = "aa:bb:cc:dd:ee:ff"
+                reply = packet.Packet()
+                reply.add_protocol(ethernet.ethernet(
+                    ethertype=eth.ethertype,
+                    dst=eth.src,
+                    src=vip_mac))
+                reply.add_protocol(arp.arp(
+                    opcode=arp.ARP_REPLY,
+                    src_mac=vip_mac,
+                    src_ip=self.LOAD_BALANCER_VIP,
+                    dst_mac=arp_pkt.src_mac,
+                    dst_ip=arp_pkt.src_ip))
+                reply.serialize()
+
+                actions = [parser.OFPActionOutput(in_port)]
+                out = parser.OFPPacketOut(
+                    datapath=datapath,
+                    buffer_id=ofproto.OFP_NO_BUFFER,
+                    in_port=ofproto.OFPP_CONTROLLER,
+                    actions=actions,
+                    data=reply.data)
+                datapath.send_msg(out)
+                return
+
         ip_pkt = pkt.get_protocol(ipv4.ipv4)
         tcp_pkt = pkt.get_protocol(tcp.tcp)
 
@@ -243,11 +273,21 @@ class AntiBruteForceSwitch(app_manager.RyuApp):
                         hard_timeout=30,
                     )
                     self.blocked_ips.add(ip_pkt.src)
+                    eventlet.spawn_after(30, self.blocked_ips.discard, ip_pkt.src)
                 return
 
             if self.load_balancer.enabled and ip_pkt.dst == self.LOAD_BALANCER_VIP:
                 server = self.load_balancer.choose_server()
                 if server:
+                    server_mac = None
+                    for mac, info in self.host_index.items():
+                        if info.get("ip") == server["ip"]:
+                            server_mac = mac
+                            break
+                            
+                    if server_mac:
+                        server["mac"] = server_mac
+                        
                     self.load_balancer.install_flow_rule(
                         datapath,
                         add_flow_func=self.add_flow,
@@ -261,8 +301,10 @@ class AntiBruteForceSwitch(app_manager.RyuApp):
                     if datapath.ofproto.OFP_VERSION == ofproto_v1_3.OFP_VERSION and server.get("ip"):
                         actions = [
                             parser.OFPActionSetField(ipv4_dst=server["ip"]),
-                            parser.OFPActionOutput(out_port),
                         ]
+                        if server_mac:
+                            actions.append(parser.OFPActionSetField(eth_dst=server_mac))
+                        actions.append(parser.OFPActionOutput(out_port))
                     else:
                         actions = [parser.OFPActionOutput(out_port)]
 
@@ -308,17 +350,19 @@ class AntiBruteForceSwitch(app_manager.RyuApp):
                             logger=self.sec_logger,
                         )
                         self.blocked_ips.add(src_ip)
+                        eventlet.spawn_after(self.BLOCK_TIME, self.blocked_ips.discard, src_ip)
                     return
 
         out_port = self.mac_to_port[dpid].get(dst, ofproto.OFPP_FLOOD)
         actions = [parser.OFPActionOutput(out_port)]
 
-        if out_port != ofproto.OFPP_FLOOD:
-            if datapath.ofproto.OFP_VERSION == ofproto_v1_3.OFP_VERSION:
-                match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
-            else:
-                match = parser.OFPMatch(in_port=in_port, dl_dst=dst)
-            self.add_flow(datapath, 1, match, actions)
+        # Do not install flow rules so all packets go to the controller
+        # if out_port != ofproto.OFPP_FLOOD:
+        #     if datapath.ofproto.OFP_VERSION == ofproto_v1_3.OFP_VERSION:
+        #         match = parser.OFPMatch(in_port=in_port, eth_dst=dst)
+        #     else:
+        #         match = parser.OFPMatch(in_port=in_port, dl_dst=dst)
+        #     self.add_flow(datapath, 1, match, actions)
 
         out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
                                   in_port=in_port, actions=actions, data=msg.data if msg.buffer_id == ofproto.OFP_NO_BUFFER else None)

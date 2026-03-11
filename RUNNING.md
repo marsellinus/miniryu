@@ -90,6 +90,30 @@ Open dashboard at:
 
 - `http://127.0.0.1:5000/login`
 
+## 6. Run Simulations
+
+Inside the mininet CLI:
+
+1. DDoS Simulation
+```bash
+h2 python3 simulate_ddos.py h3
+```
+
+2. Bruteforce Simulation
+```bash
+h1 python3 simulate_ssh.py h3
+```
+
+3. Load Balancer Simulation
+```bash
+# Run two backend server
+h2 python3 -m http.server 80 &
+h3 python3 -m http.server 80 &
+
+# Run the script to Virtual IP
+h1 python3 simulate_lb.py 10.0.0.100 80
+```
+
 ## 5. Flask Dashboard APIs
 
 These are provided by Flask (proxying to Ryu where needed):
